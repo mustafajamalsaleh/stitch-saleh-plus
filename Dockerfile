@@ -1,6 +1,5 @@
 cd ~/stitch-saleh
 
-# Overwrite Dockerfile with the clean, valid content
 cat > Dockerfile <<'DOCKERFILE'
 FROM ubuntu:22.04
 
@@ -10,7 +9,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     SAMTOOLS_VERSION=1.20 \
     BCFTOOLS_VERSION=1.20
 
-# Core build + compression + SSL + curl (needed for htslib cloud backends)
+# Core build deps (curl/SSL for htslib cloud backends)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential autoconf automake libtool pkg-config \
     ca-certificates curl wget git \
@@ -28,10 +27,10 @@ RUN curl -fsSL https://github.com/samtools/htslib/releases/download/${HTSLIB_VER
   ./configure --enable-gcs --enable-libcurl && \
   make -j"$(nproc)" && make install
 
-# Ensure loader can find libhts.so
+# Make sure libhts is found at runtime
 RUN echo "/usr/local/lib" > /etc/ld.so.conf.d/htslib.conf && ldconfig
 
-# ===== Build samtools & bcftools against the installed htslib =====
+# ===== Build samtools & bcftools against that htslib =====
 RUN curl -fsSL https://github.com/samtools/samtools/releases/download/${SAMTOOLS_VERSION}/samtools-${SAMTOOLS_VERSION}.tar.bz2 \
   | tar -xj && \
   cd samtools-${SAMTOOLS_VERSION} && \
@@ -47,7 +46,7 @@ RUN Rscript -e 'install.packages(c("Rcpp","RcppArmadillo"), repos="https://cloud
     Rscript -e 'install.packages("remotes", repos="https://cloud.r-project.org")' && \
     Rscript -e 'remotes::install_github("rwdavies/STITCH", upgrade="never")'
 
-# Symlink STITCH runner for convenience
+# Make /STITCH/STITCH.R convenient to call
 RUN Rscript -e 'cat(system.file("scripts","STITCH.R", package="STITCH"))' \
     | xargs -I{} ln -s {} /STITCH && \
     ln -sf /STITCH /STITCH/STITCH.R
@@ -57,7 +56,7 @@ WORKDIR /work
 ENTRYPOINT ["/bin/bash"]
 DOCKERFILE
 
-# Commit and push
 git add Dockerfile
-git commit -m "Fix Dockerfile: make FROM first line; remove stray text"
+git commit -m "Fix Dockerfile header (FROM first line); remove stray text"
 git push
+
