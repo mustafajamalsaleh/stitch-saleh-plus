@@ -1,6 +1,3 @@
-cd ~/stitch-saleh
-
-cat > Dockerfile <<'DOCKERFILE'
 FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -54,9 +51,3 @@ RUN Rscript -e 'cat(system.file("scripts","STITCH.R", package="STITCH"))' \
 ENV PATH="/usr/local/bin:${PATH}"
 WORKDIR /work
 ENTRYPOINT ["/bin/bash"]
-DOCKERFILE
-
-git add Dockerfile
-git commit -m "Fix Dockerfile header (FROM first line); remove stray text"
-git push
-
