@@ -5,7 +5,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
     HTSLIB_VERSION=1.20 \
     SAMTOOLS_VERSION=1.20 \
     BCFTOOLS_VERSION=1.20 \
-    STITCH_VERSION=1.8.4
+    STITCH_VERSION=1.8.4 \
+    # Use a reliable CRAN mirror for CI
+    CRAN_URL=https://cloud.r-project.org
 
 # Toolchain + headers for R pkgs; BLAS/LAPACK; fonts/images; pandoc/qpdf
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -33,7 +35,7 @@ RUN curl -fsSL https://github.com/samtools/htslib/releases/download/${HTSLIB_VER
   ./configure --enable-gcs --enable-libcurl && \
   make -j"$(nproc)" && make install
 RUN echo "/usr/local/lib" > /etc/ld.so.conf.d/htslib.conf && ldconfig
-# (GCS + libcurl flags are required if you want to stream gs:// and HTTP(S).) :contentReference[oaicite:1]{index=1}
+# (GCS + libcurl is required for streaming gs:// and HTTP(S).) :contentReference[oaicite:2]{index=2}
 
 # ---------- samtools & bcftools (against that htslib) ----------
 RUN curl -fsSL https://github.com/samtools/samtools/releases/download/${SAMTOOLS_VERSION}/samtools-${SAMTOOLS_VERSION}.tar.bz2 \
@@ -44,16 +46,23 @@ RUN curl -fsSL https://github.com/samtools/bcftools/releases/download/${BCFTOOLS
   | tar -xj && cd bcftools-${BCFTOOLS_VERSION} && \
   ./configure && make -j"$(nproc)" && make install
 
-# ---------- STITCH (install from a tagged release, per README) ----------
+# ---------- STITCH (from a tagged release, per README) ----------
 WORKDIR /opt
 RUN curl -fsSL -o STITCH.zip "https://github.com/rwdavies/STITCH/archive/refs/tags/${STITCH_VERSION}.zip" && \
     unzip STITCH.zip && mv STITCH-${STITCH_VERSION} STITCH && rm STITCH.zip
 
 WORKDIR /opt/STITCH
-# Install R deps (script provided by STITCH), then install package via Makefile
-RUN ./scripts/install-dependencies.sh && \
-    make install
-# (These are the exact steps recommended by the STITCH README for releases.) :contentReference[oaicite:2]{index=2}
+
+# Make the dependency script verbose and fail-fast, and set CRAN mirror
+# Also show the script contents before running for easier debugging in CI logs.
+RUN sed -n '1,200p' scripts/install-dependencies.sh && \
+    bash -euxo pipefail -c '\
+      echo "options(repos=c(CRAN=\"${CRAN_URL}\"))" >/etc/R/Rprofile.site; \
+      ./scripts/install-dependencies.sh \
+    '
+
+# Use project’s recommended installer (runs R install of the built package and sets up STITCH.R) 
+RUN make install
 
 # Convenience symlink so tasks can call /STITCH/STITCH.R
 RUN ln -sf /opt/STITCH/STITCH.R /STITCH && ln -sf /opt/STITCH/STITCH.R /STITCH/STITCH.R
