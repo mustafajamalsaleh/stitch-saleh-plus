@@ -1,12 +1,16 @@
 FROM ubuntu:22.04
 
+# --- allow passing a GitHub token during build so pak/remotes can auth to GitHub ---
+ARG GITHUB_PAT
+ENV GITHUB_PAT=${GITHUB_PAT}
+
 ENV DEBIAN_FRONTEND=noninteractive \
     TZ=Etc/UTC \
     HTSLIB_VERSION=1.20 \
     SAMTOOLS_VERSION=1.20 \
     BCFTOOLS_VERSION=1.20
 
-# Toolchain, headers for R pkgs, BLAS/LAPACK, plus pandoc/qpdf (avoid vignette failures)
+# Toolchain, headers for R packages, BLAS/LAPACK, plus pandoc/qpdf (avoid vignette PDF toolchain issues)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential gfortran autoconf automake libtool pkg-config cmake \
     ca-certificates curl wget git unzip \
@@ -25,6 +29,7 @@ RUN curl -fsSL https://github.com/samtools/htslib/releases/download/${HTSLIB_VER
   cd htslib-${HTSLIB_VERSION} && \
   ./configure --enable-gcs --enable-libcurl && \
   make -j"$(nproc)" && make install
+# make sure libhts is resolvable
 RUN echo "/usr/local/lib" > /etc/ld.so.conf.d/htslib.conf && ldconfig
 
 # ---------- samtools & bcftools (against that htslib) ----------
@@ -36,14 +41,15 @@ RUN curl -fsSL https://github.com/samtools/bcftools/releases/download/${BCFTOOLS
   | tar -xj && cd bcftools-${BCFTOOLS_VERSION} && \
   ./configure && make -j"$(nproc)" && make install
 
-# ---------- Install STITCH via pak (recommended in README) ----------
-# pak resolves R deps cleanly; we also skip building vignettes/manuals to avoid TeX requirements.
+# ---------- Install STITCH via pak (robust GitHub installer) ----------
+# Skip vignettes / manual to avoid TeX PDF toolchain
 ENV R_INSTALL_ARGS="--no-manual --no-build-vignettes" \
     R_BUILD_ARGS="--no-build-vignettes"
+
 RUN Rscript -e 'install.packages("pak", repos="https://cloud.r-project.org")' && \
     Rscript -e 'pak::pkg_install("rwdavies/STITCH/STITCH", ask=FALSE)'
 
-# Convenience symlink so you can call /STITCH/STITCH.R
+# Convenience shim so you can call /STITCH/STITCH.R
 RUN Rscript -e 'cat(system.file("scripts","STITCH.R", package="STITCH"))' \
     | xargs -I{} ln -s {} /STITCH && \
     ln -sf /STITCH /STITCH/STITCH.R
@@ -51,4 +57,3 @@ RUN Rscript -e 'cat(system.file("scripts","STITCH.R", package="STITCH"))' \
 ENV PATH="/usr/local/bin:${PATH}"
 WORKDIR /work
 ENTRYPOINT ["/bin/bash"]
-
