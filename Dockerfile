@@ -5,9 +5,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     HTSLIB_VERSION=1.20 \
     SAMTOOLS_VERSION=1.20 \
     BCFTOOLS_VERSION=1.20 \
-    STITCH_VERSION=1.8.4 \
-    R_INSTALL_ARGS="--no-manual --no-build-vignettes" \
-    R_BUILD_ARGS="--no-build-vignettes"
+    STITCH_VERSION=1.8.4
 
 # Toolchain + headers for R pkgs; BLAS/LAPACK; fonts/images; pandoc/qpdf
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -35,6 +33,7 @@ RUN curl -fsSL https://github.com/samtools/htslib/releases/download/${HTSLIB_VER
   ./configure --enable-gcs --enable-libcurl && \
   make -j"$(nproc)" && make install
 RUN echo "/usr/local/lib" > /etc/ld.so.conf.d/htslib.conf && ldconfig
+# (GCS + libcurl flags are required if you want to stream gs:// and HTTP(S).) :contentReference[oaicite:1]{index=1}
 
 # ---------- samtools & bcftools (against that htslib) ----------
 RUN curl -fsSL https://github.com/samtools/samtools/releases/download/${SAMTOOLS_VERSION}/samtools-${SAMTOOLS_VERSION}.tar.bz2 \
@@ -42,23 +41,21 @@ RUN curl -fsSL https://github.com/samtools/samtools/releases/download/${SAMTOOLS
   ./configure && make -j"$(nproc)" && make install
 
 RUN curl -fsSL https://github.com/samtools/bcftools/releases/download/${BCFTOOLS_VERSION}/bcftools-${BCFTOOLS_VERSION}.tar.bz2 \
-  | tar -xj && cd bcftools-${BCCFTOOLS_VERSION:-$BCFTOOLS_VERSION} && \
+  | tar -xj && cd bcftools-${BCFTOOLS_VERSION} && \
   ./configure && make -j"$(nproc)" && make install
 
-# ---------- STITCH from a release (no GitHub API; no pak/remotes) ----------
-# Download release zip, install deps via STITCH's script, then build & install without vignettes/manual
+# ---------- STITCH (install from a tagged release, per README) ----------
 WORKDIR /opt
 RUN curl -fsSL -o STITCH.zip "https://github.com/rwdavies/STITCH/archive/refs/tags/${STITCH_VERSION}.zip" && \
     unzip STITCH.zip && mv STITCH-${STITCH_VERSION} STITCH && rm STITCH.zip
 
 WORKDIR /opt/STITCH
-# Install R package dependencies (script provided by the project)
-RUN ./scripts/install-dependencies.sh
-# Build tarball then install it with flags to skip vignettes/manual (avoid TeX/PDF toolchain)
-RUN R CMD build ${R_BUILD_ARGS} STITCH && \
-    R CMD INSTALL ${R_INSTALL_ARGS} STITCH_*.tar.gz
+# Install R deps (script provided by STITCH), then install package via Makefile
+RUN ./scripts/install-dependencies.sh && \
+    make install
+# (These are the exact steps recommended by the STITCH README for releases.) :contentReference[oaicite:2]{index=2}
 
-# Convenience symlink so you can call /STITCH/STITCH.R
+# Convenience symlink so tasks can call /STITCH/STITCH.R
 RUN ln -sf /opt/STITCH/STITCH.R /STITCH && ln -sf /opt/STITCH/STITCH.R /STITCH/STITCH.R
 
 ENV PATH="/usr/local/bin:${PATH}"
