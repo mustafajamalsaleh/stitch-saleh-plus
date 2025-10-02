@@ -1,5 +1,7 @@
-what do i do with the scirpt you sent:
- # ===== Base: Ubuntu + system deps =====
+cd ~/stitch-saleh
+
+# Overwrite Dockerfile with the clean, valid content
+cat > Dockerfile <<'DOCKERFILE'
 FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -14,15 +16,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl wget git \
     zlib1g-dev libbz2-dev liblzma-dev libdeflate-dev libcurl4-openssl-dev \
     libssl-dev \
-    # R base and compilers for STITCH
     r-base r-base-dev \
-    # helpers
     less vim \
  && rm -rf /var/lib/apt/lists/*
 
 # ===== Build HTSLIB with GCS + libcurl =====
-# --enable-gcs turns on Google Cloud Storage support
-# --enable-libcurl enables HTTP/HTTPS and complements cloud backends
 WORKDIR /opt/src
 RUN curl -fsSL https://github.com/samtools/htslib/releases/download/${HTSLIB_VERSION}/htslib-${HTSLIB_VERSION}.tar.bz2 \
   | tar -xj && \
@@ -45,7 +43,6 @@ RUN curl -fsSL https://github.com/samtools/bcftools/releases/download/${BCFTOOLS
   ./configure && make -j"$(nproc)" && make install
 
 # ===== Install STITCH in R =====
-# STITCH.R will be available in the package’s inst/ folder; we’ll symlink it.
 RUN Rscript -e 'install.packages(c("Rcpp","RcppArmadillo"), repos="https://cloud.r-project.org")' && \
     Rscript -e 'install.packages("remotes", repos="https://cloud.r-project.org")' && \
     Rscript -e 'remotes::install_github("rwdavies/STITCH", upgrade="never")'
@@ -55,8 +52,12 @@ RUN Rscript -e 'cat(system.file("scripts","STITCH.R", package="STITCH"))' \
     | xargs -I{} ln -s {} /STITCH && \
     ln -sf /STITCH /STITCH/STITCH.R
 
-# ===== Default environment tweaks =====
 ENV PATH="/usr/local/bin:${PATH}"
-
 WORKDIR /work
 ENTRYPOINT ["/bin/bash"]
+DOCKERFILE
+
+# Commit and push
+git add Dockerfile
+git commit -m "Fix Dockerfile: make FROM first line; remove stray text"
+git push
