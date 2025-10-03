@@ -51,13 +51,23 @@ RUN curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest \
     micromamba clean -a -y
 ENV PATH="${MAMBA_ROOT}/envs/stitch/bin:${PATH}"
 
-# ✅ Robust launcher instead of brittle symlink
-# Creates /usr/local/bin/stitch that locates STITCH.R inside the installed package and execs it with your args.
-RUN bash -lc 'cat > /usr/local/bin/stitch << "SH"\n#!/usr/bin/env bash\nset -euo pipefail\np=$(Rscript -e "cat(system.file(\\"scripts\\", \\"STITCH.R\\", package=\\"STITCH\\"))")\nif [ -z \"$p\" ] || [ ! -f \"$p\" ]; then\n  echo \"ERROR: Could not locate STITCH.R in the installed STITCH package.\" >&2\n  echo \"Hint: ensure r-stitch is installed (Bioconda) and check: R -q -e \\\"print(system.file('scripts','STITCH.R', package='STITCH'))\\\"\" >&2\n  exit 1\nfi\nexec Rscript \"$p\" \"$@\"\nSH\nchmod +x /usr/local/bin/stitch'
+# Create a robust launcher that locates STITCH.R at runtime
+RUN cat > /usr/local/bin/stitch <<'EOF' && chmod +x /usr/local/bin/stitch
+#!/usr/bin/env bash
+set -euo pipefail
+p=$(Rscript -e 'cat(system.file("scripts","STITCH.R", package="STITCH"))')
+if [ -z "$p" ] || [ ! -f "$p" ]; then
+  echo "ERROR: Could not locate STITCH.R in the installed STITCH package." >&2
+  echo "Hint: ensure r-stitch is installed; check: R -q -e \"print(system.file('scripts','STITCH.R', package='STITCH'))\"" >&2
+  exit 1
+fi
+exec Rscript "$p" "$@"
+EOF
 
-# Convenience shim so tasks can call /STITCH/STITCH.R (provided by the installed STITCH package)
-RUN ln -sf $(Rscript -e 'cat(system.file("scripts","STITCH.R", package="STITCH"))') /STITCH && \
-    ln -sf /STITCH /STITCH/STITCH.R
+# (Optional) Keep backward-compat path /STITCH/STITCH.R if your WDL calls it
+RUN mkdir -p /STITCH && \
+    printf '%s\n' '#!/usr/bin/env bash' 'exec stitch "$@"' > /STITCH/STITCH.R && \
+    chmod +x /STITCH/STITCH.R
 
 WORKDIR /work
 ENTRYPOINT ["/bin/bash"]
