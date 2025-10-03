@@ -43,7 +43,6 @@ RUN curl -fsSL https://github.com/samtools/bcftools/releases/download/${BCFTOOLS
   ./configure && make -j"$(nproc)" && make install
 
 # ---------- STITCH via Bioconda (no source build) ----------
-# Install micromamba and create a fixed env with r-stitch
 ARG MAMBA_ROOT=/opt/micromamba
 ENV MAMBA_ROOT_PREFIX=${MAMBA_ROOT}
 RUN curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest \
@@ -51,6 +50,10 @@ RUN curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest \
     micromamba create -y -p ${MAMBA_ROOT}/envs/stitch -c conda-forge -c bioconda r-base=4.* r-stitch=1.8.4 && \
     micromamba clean -a -y
 ENV PATH="${MAMBA_ROOT}/envs/stitch/bin:${PATH}"
+
+# ✅ Robust launcher instead of brittle symlink
+# Creates /usr/local/bin/stitch that locates STITCH.R inside the installed package and execs it with your args.
+RUN bash -lc 'cat > /usr/local/bin/stitch << "SH"\n#!/usr/bin/env bash\nset -euo pipefail\np=$(Rscript -e "cat(system.file(\\"scripts\\", \\"STITCH.R\\", package=\\"STITCH\\"))")\nif [ -z \"$p\" ] || [ ! -f \"$p\" ]; then\n  echo \"ERROR: Could not locate STITCH.R in the installed STITCH package.\" >&2\n  echo \"Hint: ensure r-stitch is installed (Bioconda) and check: R -q -e \\\"print(system.file('scripts','STITCH.R', package='STITCH'))\\\"\" >&2\n  exit 1\nfi\nexec Rscript \"$p\" \"$@\"\nSH\nchmod +x /usr/local/bin/stitch'
 
 # Convenience shim so tasks can call /STITCH/STITCH.R (provided by the installed STITCH package)
 RUN ln -sf $(Rscript -e 'cat(system.file("scripts","STITCH.R", package="STITCH"))') /STITCH && \
