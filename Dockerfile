@@ -9,7 +9,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # base deps: compilers, libs for htslib/samtools/bcftools, R
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential gfortran autoconf automake libtool pkg-config cmake \
-    ca-certificates curl wget git unzip \
+    ca-certificates curl wget git unzip bzip2 \
     zlib1g-dev libbz2-dev liblzma-dev libdeflate-dev \
     libcurl4-openssl-dev libssl-dev libxml2-dev libgit2-dev \
     libopenblas-dev liblapack-dev \
@@ -46,11 +46,10 @@ RUN curl -fsSL https://github.com/samtools/bcftools/releases/download/${BCFTOOLS
   ./configure && make -j"$(nproc)" && make install
 
 # ---------- install STITCH in system R ----------
-# install remotes, then STITCH. We then create /STITCH/STITCH.R shim.
 RUN Rscript -e 'install.packages("remotes", repos="https://cloud.r-project.org")' && \
     Rscript -e 'remotes::install_github("davidsli/STITCH")'
 
-# make a stable launcher `stitch` that finds STITCH.R dynamically
+# wrapper that resolves STITCH.R location dynamically
 RUN cat > /usr/local/bin/stitch <<'EOF' && chmod +x /usr/local/bin/stitch
 #!/usr/bin/env bash
 set -euo pipefail
@@ -62,7 +61,7 @@ fi
 exec Rscript "$p" "$@"
 EOF
 
-# keep backward compatible path /STITCH/STITCH.R because your WDL uses /STITCH/STITCH.R
+# keep /STITCH/STITCH.R for WDL
 RUN mkdir -p /STITCH && \
     printf '%s\n' '#!/usr/bin/env bash' 'exec stitch "$@"' > /STITCH/STITCH.R && \
     chmod +x /STITCH/STITCH.R
