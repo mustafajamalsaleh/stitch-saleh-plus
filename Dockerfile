@@ -8,7 +8,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     MAMBA_ROOT=/opt/micromamba \
     MAMBA_ROOT_PREFIX=/opt/micromamba
 
-# base deps: compilers, libs for htslib/samtools/bcftools, plus R
+# base deps: compilers, libraries, R, plus bzip2 (needed to extract micromamba tar)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential gfortran autoconf automake libtool pkg-config cmake \
     ca-certificates curl wget git unzip \
@@ -27,8 +27,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # avoid git “dubious ownership” warnings
 RUN git config --global --add safe.directory '*'
 
-# ---------- build & install htslib ----------
 WORKDIR /opt/src
+
+##########
+# HTSLIB
+##########
 RUN curl -fsSL https://github.com/samtools/htslib/releases/download/${HTSLIB_VERSION}/htslib-${HTSLIB_VERSION}.tar.bz2 \
   | tar -xj && \
   cd htslib-${HTSLIB_VERSION} && \
@@ -36,33 +39,40 @@ RUN curl -fsSL https://github.com/samtools/htslib/releases/download/${HTSLIB_VER
   make -j"$(nproc)" && make install && \
   echo "/usr/local/lib" > /etc/ld.so.conf.d/htslib.conf && ldconfig
 
-# ---------- build & install samtools ----------
+##########
+# SAMTOOLS
+##########
 RUN curl -fsSL https://github.com/samtools/samtools/releases/download/${SAMTOOLS_VERSION}/samtools-${SAMTOOLS_VERSION}.tar.bz2 \
   | tar -xj && \
   cd samtools-${SAMTOOLS_VERSION} && \
   ./configure && make -j"$(nproc)" && make install
 
-# ---------- build & install bcftools ----------
+##########
+# BCFTOOLS
+##########
 RUN curl -fsSL https://github.com/samtools/bcftools/releases/download/${BCFTOOLS_VERSION}/bcftools-${BCFTOOLS_VERSION}.tar.bz2 \
   | tar -xj && \
   cd bcftools-${BCFTOOLS_VERSION} && \
   ./configure && make -j"$(nproc)" && make install
 
-# ---------- micromamba env with STITCH ----------
-# we download micromamba tar first (more reliable than piping straight to tar)
+##########
+# micromamba + STITCH env
+##########
+# download amd64 micromamba tarball to a file first, then extract
 RUN curl -fsSL https://micro.mamba.pm/api/micromamba/linux-64/latest -o /tmp/micromamba.tar.bz2 && \
     tar -xjf /tmp/micromamba.tar.bz2 -C /usr/local/bin --strip-components=1 bin/micromamba && \
+    rm /tmp/micromamba.tar.bz2 && \
     /usr/local/bin/micromamba create -y -p ${MAMBA_ROOT}/envs/stitch \
         -c conda-forge -c bioconda \
         r-base=4.* r-stitch=1.8.4 && \
-    /usr/local/bin/micromamba clean -a -y && \
-    rm -f /tmp/micromamba.tar.bz2
+    /usr/local/bin/micromamba clean -a -y
 
-# put that env first on PATH so Rscript, stitch, etc come from it
+# ensure that env is first on PATH so Rscript and STITCH come from there
 ENV PATH="${MAMBA_ROOT}/envs/stitch/bin:${PATH}"
 
-# ---------- stitch launcher ----------
-# `stitch` will resolve STITCH.R inside the conda-installed STITCH package
+##########
+# stitch launcher
+##########
 RUN cat > /usr/local/bin/stitch <<'EOF' && chmod +x /usr/local/bin/stitch
 #!/usr/bin/env bash
 set -euo pipefail
@@ -74,7 +84,7 @@ fi
 exec Rscript "$p" "$@"
 EOF
 
-# keep backward-compatible /STITCH/STITCH.R because your WDL calls /STITCH/STITCH.R
+# keep backward-compatible /STITCH/STITCH.R path for the WDL
 RUN mkdir -p /STITCH && \
     printf '%s\n' '#!/usr/bin/env bash' 'exec stitch "$@"' > /STITCH/STITCH.R && \
     chmod +x /STITCH/STITCH.R
