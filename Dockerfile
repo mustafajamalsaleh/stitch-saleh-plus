@@ -4,11 +4,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TZ=Etc/UTC \
     HTSLIB_VERSION=1.20 \
     SAMTOOLS_VERSION=1.20 \
-    BCFTOOLS_VERSION=1.20 \
-    MAMBA_ROOT=/opt/micromamba \
-    MAMBA_ROOT_PREFIX=/opt/micromamba
+    BCFTOOLS_VERSION=1.20
 
-# Toolchain + headers for R pkgs; BLAS/LAPACK; fonts/images; pandoc/qpdf
+# base deps: compilers, libs for htslib/samtools/bcftools, R
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential gfortran autoconf automake libtool pkg-config cmake \
     ca-certificates curl wget git unzip \
@@ -23,50 +21,48 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     less vim && \
     rm -rf /var/lib/apt/lists/*
 
-# Avoid occasional git “dubious ownership” warnings in CI
+# avoid git "dubious ownership" warnings
 RUN git config --global --add safe.directory '*'
 
-# ---------- HTSLIB (with GCS + libcurl) ----------
+# ---------- build & install htslib ----------
 WORKDIR /opt/src
 RUN curl -fsSL https://github.com/samtools/htslib/releases/download/${HTSLIB_VERSION}/htslib-${HTSLIB_VERSION}.tar.bz2 \
   | tar -xj && \
   cd htslib-${HTSLIB_VERSION} && \
   ./configure --enable-gcs --enable-libcurl && \
-  make -j"$(nproc)" && make install
-RUN echo "/usr/local/lib" > /etc/ld.so.conf.d/htslib.conf && ldconfig
+  make -j"$(nproc)" && make install && \
+  echo "/usr/local/lib" > /etc/ld.so.conf.d/htslib.conf && ldconfig
 
-# ---------- samtools & bcftools (against that htslib) ----------
+# ---------- build & install samtools ----------
 RUN curl -fsSL https://github.com/samtools/samtools/releases/download/${SAMTOOLS_VERSION}/samtools-${SAMTOOLS_VERSION}.tar.bz2 \
-  | tar -xj && cd samtools-${SAMTOOLS_VERSION} && \
+  | tar -xj && \
+  cd samtools-${SAMTOOLS_VERSION} && \
   ./configure && make -j"$(nproc)" && make install
 
+# ---------- build & install bcftools ----------
 RUN curl -fsSL https://github.com/samtools/bcftools/releases/download/${BCFTOOLS_VERSION}/bcftools-${BCFTOOLS_VERSION}.tar.bz2 \
-  | tar -xj && cd bcftools-${BCFTOOLS_VERSION} && \
+  | tar -xj && \
+  cd bcftools-${BCFTOOLS_VERSION} && \
   ./configure && make -j"$(nproc)" && make install
 
-# ---------- STITCH via Bioconda (no source build) ----------
-ARG MAMBA_ROOT=/opt/micromamba
-ENV MAMBA_ROOT_PREFIX=${MAMBA_ROOT}
-RUN curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest \
-  | tar -xvj -C /usr/local/bin --strip-components=1 bin/micromamba && \
-    micromamba create -y -p ${MAMBA_ROOT}/envs/stitch -c conda-forge -c bioconda r-base=4.* r-stitch=1.8.4 && \
-    micromamba clean -a -y
-ENV PATH="${MAMBA_ROOT}/envs/stitch/bin:${PATH}"
+# ---------- install STITCH in system R ----------
+# install remotes, then STITCH. We then create /STITCH/STITCH.R shim.
+RUN Rscript -e 'install.packages("remotes", repos="https://cloud.r-project.org")' && \
+    Rscript -e 'remotes::install_github("davidsli/STITCH")'
 
-# Create a robust launcher that locates STITCH.R at runtime
+# make a stable launcher `stitch` that finds STITCH.R dynamically
 RUN cat > /usr/local/bin/stitch <<'EOF' && chmod +x /usr/local/bin/stitch
 #!/usr/bin/env bash
 set -euo pipefail
 p=$(Rscript -e 'cat(system.file("scripts","STITCH.R", package="STITCH"))')
 if [ -z "$p" ] || [ ! -f "$p" ]; then
-  echo "ERROR: Could not locate STITCH.R in the installed STITCH package." >&2
-  echo "Hint: ensure r-stitch is installed; check: R -q -e \"print(system.file('scripts','STITCH.R', package='STITCH'))\"" >&2
+  echo "ERROR: STITCH.R not found in STITCH package" >&2
   exit 1
 fi
 exec Rscript "$p" "$@"
 EOF
 
-# (Optional) Keep backward-compat path /STITCH/STITCH.R if your WDL calls it
+# keep backward compatible path /STITCH/STITCH.R because your WDL uses /STITCH/STITCH.R
 RUN mkdir -p /STITCH && \
     printf '%s\n' '#!/usr/bin/env bash' 'exec stitch "$@"' > /STITCH/STITCH.R && \
     chmod +x /STITCH/STITCH.R
