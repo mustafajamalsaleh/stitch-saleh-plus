@@ -4,7 +4,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TZ=Etc/UTC \
     HTSLIB_VERSION=1.20 \
     SAMTOOLS_VERSION=1.20 \
-    BCFTOOLS_VERSION=1.20
+    BCFTOOLS_VERSION=1.20 \
+    MAMBA_ROOT=/opt/micromamba \
+    MAMBA_ROOT_PREFIX=/opt/micromamba
 
 # Toolchain + headers for R pkgs; BLAS/LAPACK; fonts/images; pandoc/qpdf
 RUN apt-get update && apt-get install -y --no-install-recommends \
