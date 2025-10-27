@@ -4,12 +4,14 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TZ=Etc/UTC \
     HTSLIB_VERSION=1.20 \
     SAMTOOLS_VERSION=1.20 \
-    BCFTOOLS_VERSION=1.20
+    BCFTOOLS_VERSION=1.20 \
+    MAMBA_ROOT=/opt/micromamba \
+    MAMBA_ROOT_PREFIX=/opt/micromamba
 
-# base deps: compilers, libs for htslib/samtools/bcftools, R
+# base deps: compilers, libs for htslib/samtools/bcftools, plus R
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential gfortran autoconf automake libtool pkg-config cmake \
-    ca-certificates curl wget git unzip bzip2 \
+    ca-certificates curl wget git unzip \
     zlib1g-dev libbz2-dev liblzma-dev libdeflate-dev \
     libcurl4-openssl-dev libssl-dev libxml2-dev libgit2-dev \
     libopenblas-dev liblapack-dev \
@@ -18,10 +20,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpng-dev libjpeg-turbo8-dev libtiff5-dev \
     pandoc qpdf \
     r-base r-base-dev \
+    bzip2 \
     less vim && \
     rm -rf /var/lib/apt/lists/*
 
-# avoid git "dubious ownership" warnings
+# avoid git “dubious ownership” warnings
 RUN git config --global --add safe.directory '*'
 
 # ---------- build & install htslib ----------
@@ -45,11 +48,21 @@ RUN curl -fsSL https://github.com/samtools/bcftools/releases/download/${BCFTOOLS
   cd bcftools-${BCFTOOLS_VERSION} && \
   ./configure && make -j"$(nproc)" && make install
 
-# ---------- install STITCH in system R ----------
-RUN Rscript -e 'install.packages("remotes", repos="https://cloud.r-project.org")' && \
-    Rscript -e 'remotes::install_github("davidsli/STITCH")'
+# ---------- micromamba env with STITCH ----------
+# we download micromamba tar first (more reliable than piping straight to tar)
+RUN curl -fsSL https://micro.mamba.pm/api/micromamba/linux-64/latest -o /tmp/micromamba.tar.bz2 && \
+    tar -xjf /tmp/micromamba.tar.bz2 -C /usr/local/bin --strip-components=1 bin/micromamba && \
+    /usr/local/bin/micromamba create -y -p ${MAMBA_ROOT}/envs/stitch \
+        -c conda-forge -c bioconda \
+        r-base=4.* r-stitch=1.8.4 && \
+    /usr/local/bin/micromamba clean -a -y && \
+    rm -f /tmp/micromamba.tar.bz2
 
-# wrapper that resolves STITCH.R location dynamically
+# put that env first on PATH so Rscript, stitch, etc come from it
+ENV PATH="${MAMBA_ROOT}/envs/stitch/bin:${PATH}"
+
+# ---------- stitch launcher ----------
+# `stitch` will resolve STITCH.R inside the conda-installed STITCH package
 RUN cat > /usr/local/bin/stitch <<'EOF' && chmod +x /usr/local/bin/stitch
 #!/usr/bin/env bash
 set -euo pipefail
@@ -61,7 +74,7 @@ fi
 exec Rscript "$p" "$@"
 EOF
 
-# keep /STITCH/STITCH.R for WDL
+# keep backward-compatible /STITCH/STITCH.R because your WDL calls /STITCH/STITCH.R
 RUN mkdir -p /STITCH && \
     printf '%s\n' '#!/usr/bin/env bash' 'exec stitch "$@"' > /STITCH/STITCH.R && \
     chmod +x /STITCH/STITCH.R
