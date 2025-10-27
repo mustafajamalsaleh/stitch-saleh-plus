@@ -1,40 +1,13 @@
 FROM stefangroha/stitch_gcs:0.2
 
-# Install dependencies and tools
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    wget \
-    bzip2 \
-    ca-certificates \
-    libncurses5-dev \
-    zlib1g-dev \
-    libbz2-dev \
-    liblzma-dev \
-    libcurl4-openssl-dev && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+# Use micromamba (lightweight conda) to install samtools and bcftools
+# This avoids apt-get issues and is compatible with most base images
+RUN curl -fsSL "https://micromamba.snakepit.net/api/micromamba/linux-64/latest" | tar -xvj -C /usr/local bin/micromamba && \
+    /usr/local/bin/micromamba create -y -p /opt/biotools -c conda-forge -c bioconda samtools=1.17 bcftools=1.17 && \
+    /usr/local/bin/micromamba clean -a -y
 
-# Install samtools
-RUN wget https://github.com/samtools/samtools/releases/download/1.17/samtools-1.17.tar.bz2 && \
-    tar -xjf samtools-1.17.tar.bz2 && \
-    cd samtools-1.17 && \
-    ./configure --prefix=/usr/local && \
-    make && \
-    make install && \
-    cd .. && \
-    rm -rf samtools-1.17 samtools-1.17.tar.bz2
-
-# Install bcftools
-RUN wget https://github.com/samtools/bcftools/releases/download/1.17/bcftools-1.17.tar.bz2 && \
-    tar -xjf bcftools-1.17.tar.bz2 && \
-    cd bcftools-1.17 && \
-    ./configure --prefix=/usr/local && \
-    make && \
-    make install && \
-    cd .. && \
-    rm -rf bcftools-1.17 bcftools-1.17.tar.bz2
+# Add tools to PATH so they're available directly
+ENV PATH="/opt/biotools/bin:$PATH"
 
 # Verify installations
 RUN samtools --version && bcftools --version
-
-# Keep the original entrypoint/cmd from base image
