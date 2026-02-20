@@ -11,14 +11,11 @@ ENV PATH="/opt/biotools/bin:$PATH"
 # Verify samtools/bcftools
 RUN samtools --version && bcftools --version
 
-# Install GCSFUSE for Tier 2 streaming
-RUN export GCSFUSE_REPO=gcsfuse-$(lsb_release -c -s) && \
-    echo "deb http://packages.cloud.google.com/apt $GCSFUSE_REPO main" | tee /etc/apt/sources.list.d/gcsfuse.list && \
-    curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add - && \
-    apt-get update && \
-    apt-get install -y gcsfuse fuse && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+# Install GCSFUSE via direct binary download (works on any Linux)
+RUN curl -L -o /tmp/gcsfuse.tar.gz https://github.com/GoogleCloudPlatform/gcsfuse/releases/download/v2.6.0/gcsfuse_2.6.0_amd64.tar.gz && \
+    tar -xzf /tmp/gcsfuse.tar.gz -C /usr/local/bin && \
+    chmod +x /usr/local/bin/gcsfuse && \
+    rm /tmp/gcsfuse.tar.gz
 
 # Verify GCSFUSE
-RUN which gcsfuse && gcsfuse --version
+RUN gcsfuse --version
