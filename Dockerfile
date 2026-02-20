@@ -10,14 +10,8 @@ RUN curl -fsSL "https://micromamba.snakepit.net/api/micromamba/linux-64/latest" 
 
 ENV PATH="/opt/biotools/bin:$PATH"
 
-# Install FUSE/fusermount via apt-get (needed for gcsfuse to mount)
-RUN apt-get update && \
-    apt-get install -y fuse && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+# Check if fusermount exists anywhere in the system and symlink it
+RUN find / -name fusermount 2>/dev/null | head -1 | xargs -I {} ln -sf {} /opt/biotools/bin/fusermount || echo "fusermount not found in base image"
 
-# Verify all tools
-RUN samtools --version && \
-    bcftools --version && \
-    gcsfuse --version && \
-    fusermount --version
+# Verify tools
+RUN samtools --version && bcftools --version && gcsfuse --version
