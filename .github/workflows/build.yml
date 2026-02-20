@@ -35,7 +35,7 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/stitch-gcs-plus:1.1.0-gcsfuse
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/stitch-gcs-plus:1.2.0-rclone
 
       - name: Print image digest
         run: echo "Pushed digest ${{ steps.buildpush.outputs.digest }}"
